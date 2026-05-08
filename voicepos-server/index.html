@@ -713,6 +713,13 @@ function setupAudioGraph(stream) {
   panner.connect(masterGain);
   masterGain.connect(audioCtx.destination);
 
+  // Chrome won't render audio from createMediaStreamSource unless an <audio>
+  // element also holds the stream — attach one silently to unblock the pipeline.
+  const sink = document.createElement('audio');
+  sink.srcObject = stream;
+  sink.muted = true;
+  sink.play().catch(() => {});
+
   log('spatial audio graph ready', 'ok');
 }
 
