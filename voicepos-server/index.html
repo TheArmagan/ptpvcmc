@@ -142,7 +142,7 @@
   /* radar / map */
   #radar {
     width: 100%;
-    aspect-ratio: 1;
+    height: 50vh;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: #080808;
@@ -464,30 +464,32 @@ setInterval(pollPositions, 50);
 // ─── radar ──────────────────────────────────────────────────────────────
 function updateRadar(data) {
   const canvas = document.getElementById('radar-canvas');
-  const size = canvas.parentElement.clientWidth;
-  canvas.width = size;
-  canvas.height = size;
+  const w = canvas.parentElement.clientWidth;
+  const h = canvas.parentElement.clientHeight;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-  const cx = size / 2, cy = size / 2;
+  const cx = w / 2, cy = h / 2;
 
-  ctx.clearRect(0, 0, size, size);
+  ctx.clearRect(0, 0, w, h);
 
+  const cr = Math.min(cx, cy); // radius for rings — fits inside non-square canvas
   // grid rings
   ctx.strokeStyle = '#1a1a1a';
   ctx.lineWidth = 1;
   for (let r = 1; r <= 3; r++) {
     ctx.beginPath();
-    ctx.arc(cx, cy, (cx * r) / 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, (cr * r) / 3, 0, Math.PI * 2);
     ctx.stroke();
   }
   // crosshair
   ctx.strokeStyle = '#1a1a1a';
-  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, size); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(size, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
 
   if (!data.self) return;
 
-  const scale = (cx * 0.9) / maxRange;
+  const scale = (cr * 0.9) / maxRange;
   const yaw = (data.self.yaw * Math.PI) / 180;
 
   // nearby players
@@ -569,9 +571,12 @@ function updateSpatialAudio(data) {
   const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
   const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
 
-  panner.positionX.setTargetAtTime(rx, audioCtx.currentTime, 0.05);
+  // Web Audio listener faces -Z (forward = negative Z), but our rotation
+  // produces +Z for "in front". Minecraft's left-handed coordinate system
+  // also mirrors X relative to Web Audio's right-handed one. Negate both.
+  panner.positionX.setTargetAtTime(-rx, audioCtx.currentTime, 0.05);
   panner.positionY.setTargetAtTime(dy, audioCtx.currentTime, 0.05);
-  panner.positionZ.setTargetAtTime(rz, audioCtx.currentTime, 0.05);
+  panner.positionZ.setTargetAtTime(-rz, audioCtx.currentTime, 0.05);
 
   // distance-based rolloff
   panner.maxDistance = maxRange;
