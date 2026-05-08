@@ -310,49 +310,6 @@
   <div class="panel">
 
     <div>
-      <div class="section-label">connection</div>
-      <div class="card" style="display:flex;flex-direction:column;gap:14px;">
-
-        <!-- INITIATOR FLOW -->
-        <div class="step">
-          <div class="step-label">step 1 — you start</div>
-          <button class="primary" id="btn-create" onclick="createOffer()">create offer</button>
-          <div id="offer-out-wrap" style="display:none;flex-direction:column;gap:6px;">
-            <div class="copy-hint">copy and send to your friend</div>
-            <div class="copy-btn" style="position:relative">
-              <textarea id="offer-out" readonly></textarea>
-              <button onclick="copyAndFlash('offer-out', this)">copy</button>
-              <span class="copied-flash">copied!</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- JOINER FLOW -->
-        <div class="step">
-          <div class="step-label">step 2 — paste friend's offer (if joining)</div>
-          <textarea id="offer-in" placeholder="paste offer here..." style="min-height:52px;font-size:10px"></textarea>
-          <button onclick="acceptOffer()" id="btn-accept">accept offer + create answer</button>
-          <div id="answer-out-wrap" style="display:none;flex-direction:column;gap:6px;">
-            <div class="copy-hint">copy and send back to your friend</div>
-            <div class="copy-btn" style="position:relative">
-              <textarea id="answer-out" readonly></textarea>
-              <button onclick="copyAndFlash('answer-out', this)">copy</button>
-              <span class="copied-flash">copied!</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- INITIATOR APPLIES ANSWER -->
-        <div class="step">
-          <div class="step-label">step 3 — paste friend's answer (if you started)</div>
-          <textarea id="answer-in" placeholder="paste answer here..." style="min-height:52px;font-size:10px"></textarea>
-          <button onclick="applyAnswer()" id="btn-answer">apply answer</button>
-        </div>
-
-      </div>
-    </div>
-
-    <div>
       <div class="section-label">audio</div>
       <div class="card" style="display:flex;flex-direction:column;gap:10px;">
         <div>
@@ -361,7 +318,7 @@
             <option value="">default microphone</option>
           </select>
         </div>
-        <button id="btn-mic" onclick="toggleMic()">🎙 start microphone</button>
+        <button id="btn-mic" onclick="toggleMic()">🎙 join voice</button>
         <div class="vol-slider-row">
           <label>master vol</label>
           <input type="range" id="master-vol" min="0" max="200" value="100" oninput="setMasterVol(this.value)">
@@ -409,16 +366,16 @@
 
 <script>
 // ─── state ─────────────────────────────────────────────────────────────
-let pc = null;
+let myName = null;
 let localStream = null;
+let micActive = false;
 let audioCtx = null;
 let masterGain = null;
-let remoteSource = null;
-let panner = null;
-let sinkEl = null;
-let micActive = false;
 let lastPositions = { self: null, nearby: [] };
 let maxRange = 96;
+
+// peers: name → { pc, panner, sinkEl, remoteSource, state, lastSeenMs }
+const peers = new Map();
 
 // ─── logging ────────────────────────────────────────────────────────────
 function log(msg, type = 'info') {
@@ -432,7 +389,8 @@ function log(msg, type = 'info') {
 // ─── position polling ───────────────────────────────────────────────────
 async function pollPositions() {
   try {
-    const res = await fetch('/positions');
+    const qs = myName ? `?me=${encodeURIComponent(myName)}` : '';
+    const res = await fetch(`/positions${qs}`);
     const data = await res.json();
     lastPositions = data;
 
@@ -440,8 +398,9 @@ async function pollPositions() {
     const statusText = document.getElementById('status-text');
 
     if (data.self) {
+      myName = data.self.name;
       dot.className = 'status-dot connected';
-      statusText.textContent = `receiving — ${data.self.name}`;
+      statusText.textContent = `${data.self.name}`;
       document.getElementById('coord-x').innerHTML = `<span>X</span>${data.self.x.toFixed(1)}`;
       document.getElementById('coord-y').innerHTML = `<span>Y</span>${data.self.y.toFixed(1)}`;
       document.getElementById('coord-z').innerHTML = `<span>Z</span>${data.self.z.toFixed(1)}`;
@@ -454,12 +413,13 @@ async function pollPositions() {
     updateRadar(data);
     updatePlayerList(data);
     updateSpatialAudio(data);
+    if (micActive && myName) checkForNewPeers(data);
   } catch(e) {
     document.getElementById('dot').className = 'status-dot error';
     document.getElementById('status-text').textContent = 'server unreachable';
   }
 }
-setInterval(pollPositions, 50);
+setInterval(pollPositions, 100);
 
 // ─── radar ──────────────────────────────────────────────────────────────
 function updateRadar(data) {
@@ -545,126 +505,189 @@ function updatePlayerList(data) {
     const dz = p.z - data.self.z;
     const dist = Math.sqrt(dx*dx + dy*dy + dz*dz).toFixed(1);
     const vol = Math.max(0, 1 - dist / maxRange);
+    const state = peers.get(p.name)?.state;
+    const dotColor = state === 'connected' ? 'var(--accent)' : state === 'connecting' ? 'var(--yellow)' : 'var(--muted)';
     return `
-      <div class="player-entry">
+      <div class="player-entry${state === 'connected' ? ' speaking' : ''}">
+        <span style="color:${dotColor};font-size:9px;flex-shrink:0">●</span>
         <div class="player-name">${p.name}</div>
         <div class="player-dist">${dist}m</div>
-        <div class="player-vol"><div class="player-vol-fill" style="width:${vol*100}%"></div></div>
+        <div class="player-vol"><div class="player-vol-fill" style="width:${state === 'connected' ? vol*100 : 0}%"></div></div>
       </div>`;
   }).join('');
 }
 
-// ─── spatial audio ────────────────────────────────────────────────────────
+// ─── spatial audio (per-peer) ─────────────────────────────────────────────
 function updateSpatialAudio(data) {
-  if (!panner || !data.self || !data.nearby?.length) return;
-
-  // use first nearby player for now (extend later for multiple)
-  const p = data.nearby[0];
-  if (!p) return;
-
-  const dx = p.x - data.self.x;
-  const dy = p.y - data.self.y;
-  const dz = p.z - data.self.z;
-
-  // rotate relative position by player's yaw so audio is head-relative
-  const yaw = (data.self.yaw * Math.PI) / 180;
-  const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
-  const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
-
-  // Web Audio listener faces -Z (forward = negative Z), but our rotation
-  // produces +Z for "in front". Minecraft's left-handed coordinate system
-  // also mirrors X relative to Web Audio's right-handed one. Negate both.
-  panner.positionX.setTargetAtTime(-rx, audioCtx.currentTime, 0.05);
-  panner.positionY.setTargetAtTime(dy, audioCtx.currentTime, 0.05);
-  panner.positionZ.setTargetAtTime(-rz, audioCtx.currentTime, 0.05);
-
-  // distance-based rolloff
-  panner.maxDistance = maxRange;
-  panner.refDistance = 4;
-  panner.rolloffFactor = 1.5;
+  if (!audioCtx || !data.self) return;
+  for (const [name, peer] of peers) {
+    if (!peer.panner) continue;
+    const p = (data.nearby || []).find(n => n.name === name);
+    if (!p) continue;
+    const dx = p.x - data.self.x;
+    const dy = p.y - data.self.y;
+    const dz = p.z - data.self.z;
+    const yaw = (data.self.yaw * Math.PI) / 180;
+    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+    // Web Audio listener faces -Z; Minecraft is left-handed — negate both axes
+    peer.panner.positionX.setTargetAtTime(-rx, audioCtx.currentTime, 0.05);
+    peer.panner.positionY.setTargetAtTime(dy, audioCtx.currentTime, 0.05);
+    peer.panner.positionZ.setTargetAtTime(-rz, audioCtx.currentTime, 0.05);
+    peer.panner.maxDistance = maxRange;
+  }
 }
 
-// ─── webrtc ───────────────────────────────────────────────────────────────
-function makePeerConnection() {
-  pc = new RTCPeerConnection({ iceServers: [
+// ─── audio init (must be called from user gesture) ────────────────────────
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new AudioContext();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = document.getElementById('master-vol').value / 100;
+  masterGain.connect(audioCtx.destination);
+}
+
+function createPeerPanner() {
+  const p = audioCtx.createPanner();
+  p.panningModel = 'HRTF';
+  p.distanceModel = 'inverse';
+  p.maxDistance = maxRange;
+  p.refDistance = 4;
+  p.rolloffFactor = 1.5;
+  p.connect(masterGain);
+  return p;
+}
+
+function setupPeerAudio(peerName, stream) {
+  const peer = peers.get(peerName);
+  if (!peer) return;
+  audioCtx.resume();
+  if (!peer.sinkEl) {
+    peer.sinkEl = document.createElement('audio');
+    peer.sinkEl.muted = true;
+    peer.sinkEl.autoplay = true;
+  }
+  peer.sinkEl.srcObject = stream;
+  peer.sinkEl.play().catch(() => {});
+  if (peer.remoteSource) peer.remoteSource.disconnect();
+  peer.remoteSource = audioCtx.createMediaStreamSource(stream);
+  peer.remoteSource.connect(peer.panner);
+  log(`${peerName}: audio ready`, 'ok');
+}
+
+// ─── peer connection factory ──────────────────────────────────────────────
+function makePCFor(peerName) {
+  const pc = new RTCPeerConnection({ iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-  ] });
-
-  pc.onicecandidate = (e) => {
-    // null = all candidates gathered, update textarea with final SDP
-    if (e.candidate === null) {
-      const offerOut = document.getElementById('offer-out');
-      const answerOut = document.getElementById('answer-out');
-      if (offerOut.value) offerOut.value = JSON.stringify(pc.localDescription);
-      if (answerOut.value) answerOut.value = JSON.stringify(pc.localDescription);
-    }
-  };
-
+  ]});
   pc.ontrack = (e) => {
-    log('got remote audio track', 'ok');
     const stream = e.streams[0] ?? new MediaStream([e.track]);
-    setupAudioGraph(stream);
+    setupPeerAudio(peerName, stream);
   };
-
   pc.onconnectionstatechange = () => {
-    log(`peer state: ${pc.connectionState}`, pc.connectionState === 'connected' ? 'ok' : 'info');
+    const peer = peers.get(peerName);
+    if (!peer) return;
+    peer.state = pc.connectionState;
+    log(`${peerName}: ${pc.connectionState}`, pc.connectionState === 'connected' ? 'ok' : 'info');
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') cleanupPeer(peerName);
   };
+  if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  return pc;
 }
 
-async function createOffer() {
-  initAudio();
-  makePeerConnection();
-  await ensureMic();
+// ─── auto-connect mesh ────────────────────────────────────────────────────
+async function checkForNewPeers(data) {
+  const now = Date.now();
+  const nearbyNames = new Set((data.nearby || []).map(p => p.name));
 
+  for (const [name, peer] of peers) {
+    if (nearbyNames.has(name)) peer.lastSeenMs = now;
+  }
+  for (const [name, peer] of peers) {
+    if (now - (peer.lastSeenMs ?? 0) > 8000) cleanupPeer(name);
+  }
+
+  for (const player of (data.nearby || [])) {
+    if (peers.has(player.name)) continue;
+    const peer = { pc: null, panner: createPeerPanner(), sinkEl: null, remoteSource: null, state: 'connecting', lastSeenMs: now };
+    peers.set(player.name, peer);
+    // Lower name initiates — prevents both sides offering simultaneously
+    if (myName < player.name) await initiateConnection(player.name, peer);
+  }
+}
+
+async function initiateConnection(peerName, peer) {
+  const pc = makePCFor(peerName);
+  peer.pc = pc;
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-
-  // wait for ICE gathering
-  await waitForICE();
-
-  document.getElementById('offer-out').value = JSON.stringify(pc.localDescription);
-  document.getElementById('offer-out-wrap').style.display = 'flex';
-  log('offer created — send it to your friend', 'ok');
+  await waitForICE(pc);
+  await sendSignal(peerName, pc.localDescription);
+  log(`offer -> ${peerName}`, 'info');
 }
 
-async function acceptOffer() {
-  const raw = document.getElementById('offer-in').value.trim();
-  if (!raw) return log('paste an offer first', 'err');
-
-  initAudio();
-  makePeerConnection();
-  await ensureMic();
-
-  const offer = JSON.parse(raw);
-  await pc.setRemoteDescription(offer);
-
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-
-  await waitForICE();
-
-  document.getElementById('answer-out').value = JSON.stringify(pc.localDescription);
-  document.getElementById('answer-out-wrap').style.display = 'flex';
-  log('answer created — send it back', 'ok');
+function cleanupPeer(name) {
+  const peer = peers.get(name);
+  if (!peer) return;
+  peer.pc?.close();
+  peer.panner?.disconnect();
+  peer.remoteSource?.disconnect();
+  if (peer.sinkEl) peer.sinkEl.srcObject = null;
+  peers.delete(name);
+  log(`${name}: disconnected`);
 }
 
-async function applyAnswer() {
-  const raw = document.getElementById('answer-in').value.trim();
-  if (!raw) return log('paste the answer first', 'err');
-  if (!pc) return log('create an offer first', 'err');
-  await pc.setRemoteDescription(JSON.parse(raw));
-  log('answer applied — connecting...', 'ok');
+// ─── signaling (server-relayed) ───────────────────────────────────────────
+async function pollSignals() {
+  if (!micActive || !myName) return;
+  try {
+    const res = await fetch(`/signal/${encodeURIComponent(myName)}`);
+    const sigs = await res.json();
+    for (const { from, data } of sigs) await handleSignal(from, data);
+  } catch(e) {}
+}
+setInterval(pollSignals, 500);
+
+async function sendSignal(to, data) {
+  await fetch('/signal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: myName, to, data }),
+  });
 }
 
-function waitForICE() {
+async function handleSignal(from, data) {
+  if (data.type === 'offer') {
+    let peer = peers.get(from);
+    if (!peer) {
+      peer = { pc: null, panner: createPeerPanner(), sinkEl: null, remoteSource: null, state: 'connecting', lastSeenMs: Date.now() };
+      peers.set(from, peer);
+    }
+    if (peer.pc) { peer.pc.close(); peer.pc = null; }
+    const pc = makePCFor(from);
+    peer.pc = pc;
+    await pc.setRemoteDescription(data);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitForICE(pc);
+    await sendSignal(from, pc.localDescription);
+    log(`answer -> ${from}`, 'info');
+  } else if (data.type === 'answer') {
+    const peer = peers.get(from);
+    if (peer?.pc && peer.pc.signalingState !== 'stable') {
+      await peer.pc.setRemoteDescription(data);
+    }
+  }
+}
+
+function waitForICE(pc) {
   return new Promise(resolve => {
     if (pc.iceGatheringState === 'complete') return resolve();
     pc.addEventListener('icegatheringstatechange', () => {
       if (pc.iceGatheringState === 'complete') resolve();
     });
-    // fallback timeout
     setTimeout(resolve, 3000);
   });
 }
@@ -675,75 +698,42 @@ function micConstraints() {
   return { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
 }
 
-async function ensureMic() {
-  if (localStream) return;
-  localStream = await navigator.mediaDevices.getUserMedia(micConstraints());
-  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-  micActive = true;
-  log('mic captured', 'ok');
-  document.getElementById('btn-mic').textContent = '🔴 mic active';
-}
-
 async function toggleMic() {
   if (micActive) {
     localStream?.getTracks().forEach(t => t.stop());
     localStream = null;
     micActive = false;
-    document.getElementById('btn-mic').textContent = '🎙 start microphone';
-    log('mic stopped');
+    document.getElementById('btn-mic').textContent = '🎙 join voice';
+    log('left voice chat');
+    for (const [name] of [...peers]) cleanupPeer(name);
   } else {
+    initAudio();
     try {
       localStream = await navigator.mediaDevices.getUserMedia(micConstraints());
       micActive = true;
-      document.getElementById('btn-mic').textContent = '🔴 mic active';
-      if (pc) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-      log('mic started', 'ok');
+      document.getElementById('btn-mic').textContent = '🔴 in voice chat';
+      log('joined voice chat', 'ok');
     } catch(e) {
       log('mic error: ' + e.message, 'err');
     }
   }
 }
 
-// ─── audio graph ──────────────────────────────────────────────────────────
-function initAudio() {
-  if (audioCtx) return;
-  audioCtx = new AudioContext();
-
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = document.getElementById('master-vol').value / 100;
-
-  panner = audioCtx.createPanner();
-  panner.panningModel = 'HRTF';
-  panner.distanceModel = 'inverse';
-  panner.maxDistance = maxRange;
-  panner.refDistance = 4;
-  panner.rolloffFactor = 1.5;
-  panner.connect(masterGain);
-  masterGain.connect(audioCtx.destination);
-
-  // Chrome requires an <audio> element consuming the stream to activate its
-  // WebRTC audio pipeline. Create it here during a user gesture so that
-  // autoplay is permitted; srcObject is set later in setupAudioGraph.
-  sinkEl = document.createElement('audio');
-  sinkEl.muted = true;
-  sinkEl.autoplay = true;
-}
-
-function setupAudioGraph(stream) {
-  audioCtx.resume();
-
-  // Chrome requires the sink element to be explicitly played; autoplay alone
-  // won't re-trigger if the stream had no data when srcObject was first set
-  // (which happens on the joiner side, where ontrack fires before ICE is up).
-  // Muted play() is always permitted regardless of user-gesture context.
-  sinkEl.srcObject = stream;
-  sinkEl.play().catch(() => {});
-
-  if (remoteSource) remoteSource.disconnect();
-  remoteSource = audioCtx.createMediaStreamSource(stream);
-  remoteSource.connect(panner);
-
-  log('spatial audio graph ready', 'ok');
+async function onMicDeviceChange() {
+  if (!micActive) return;
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia(micConstraints());
+    const newTrack = newStream.getAudioTracks()[0];
+    for (const [, peer] of peers) {
+      const sender = peer.pc?.getSenders().find(s => s.track?.kind === 'audio');
+      if (sender) await sender.replaceTrack(newTrack);
+    }
+    localStream?.getTracks().forEach(t => t.stop());
+    localStream = newStream;
+    log('microphone changed', 'ok');
+  } catch(e) {
+    log('mic change error: ' + e.message, 'err');
+  }
 }
 
 function setMasterVol(v) {
@@ -753,33 +743,17 @@ function setMasterVol(v) {
 function updateRange(v) {
   maxRange = parseInt(v);
   document.getElementById('range-val').textContent = v;
-  if (panner) panner.maxDistance = maxRange;
-}
-
-// ─── util ─────────────────────────────────────────────────────────────────
-function copyText(id) {
-  const el = document.getElementById(id);
-  navigator.clipboard.writeText(el.value).then(() => log('copied to clipboard', 'ok'));
-}
-
-function copyAndFlash(id, btn) {
-  const el = document.getElementById(id);
-  navigator.clipboard.writeText(el.value).then(() => {
-    log('copied to clipboard', 'ok');
-    const flash = btn.nextElementSibling;
-    flash.classList.add('show');
-    setTimeout(() => flash.classList.remove('show'), 1500);
-  });
+  for (const [, peer] of peers) {
+    if (peer.panner) peer.panner.maxDistance = maxRange;
+  }
 }
 
 // ─── microphone device enumeration ────────────────────────────────────────
 async function populateMicList() {
   try {
-    // need a temporary permission grant to get device labels
     const tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     tmp.getTracks().forEach(t => t.stop());
-  } catch(e) { /* permission denied — labels will be empty */ }
-
+  } catch(e) {}
   const devices = await navigator.mediaDevices.enumerateDevices();
   const sel = document.getElementById('mic-select');
   const current = sel.value;
@@ -790,18 +764,7 @@ async function populateMicList() {
     opt.textContent = d.label || `Microphone (${d.deviceId.slice(0,8)}...)`;
     sel.appendChild(opt);
   });
-  // restore selection if still present
   if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
-}
-
-function onMicDeviceChange() {
-  if (micActive) {
-    // restart mic with new device
-    localStream?.getTracks().forEach(t => t.stop());
-    localStream = null;
-    micActive = false;
-    toggleMic();
-  }
 }
 
 navigator.mediaDevices.addEventListener('devicechange', populateMicList);
