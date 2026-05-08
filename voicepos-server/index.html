@@ -415,6 +415,7 @@ let audioCtx = null;
 let masterGain = null;
 let remoteSource = null;
 let panner = null;
+let sinkEl = null;
 let micActive = false;
 let lastPositions = { self: null, nearby: [] };
 let maxRange = 96;
@@ -607,6 +608,7 @@ function makePeerConnection() {
 }
 
 async function createOffer() {
+  initAudio();
   makePeerConnection();
   await ensureMic();
 
@@ -625,6 +627,7 @@ async function acceptOffer() {
   const raw = document.getElementById('offer-in').value.trim();
   if (!raw) return log('paste an offer first', 'err');
 
+  initAudio();
   makePeerConnection();
   await ensureMic();
 
@@ -696,8 +699,10 @@ async function toggleMic() {
 }
 
 // ─── audio graph ──────────────────────────────────────────────────────────
-function setupAudioGraph(stream) {
+function initAudio() {
+  if (audioCtx) return;
   audioCtx = new AudioContext();
+
   masterGain = audioCtx.createGain();
   masterGain.gain.value = document.getElementById('master-vol').value / 100;
 
@@ -707,18 +712,27 @@ function setupAudioGraph(stream) {
   panner.maxDistance = maxRange;
   panner.refDistance = 4;
   panner.rolloffFactor = 1.5;
-
-  remoteSource = audioCtx.createMediaStreamSource(stream);
-  remoteSource.connect(panner);
   panner.connect(masterGain);
   masterGain.connect(audioCtx.destination);
 
-  // Chrome won't render audio from createMediaStreamSource unless an <audio>
-  // element also holds the stream — attach one silently to unblock the pipeline.
-  const sink = document.createElement('audio');
-  sink.srcObject = stream;
-  sink.muted = true;
-  sink.play().catch(() => {});
+  // Chrome requires an <audio> element consuming the stream to activate its
+  // WebRTC audio pipeline. Create it here during a user gesture so that
+  // autoplay is permitted; srcObject is set later in setupAudioGraph.
+  sinkEl = document.createElement('audio');
+  sinkEl.muted = true;
+  sinkEl.autoplay = true;
+}
+
+function setupAudioGraph(stream) {
+  // initAudio() must have been called first from a user gesture
+  audioCtx.resume();
+
+  // Wire sink — muted autoplay is allowed in Chrome without a gesture
+  sinkEl.srcObject = stream;
+
+  if (remoteSource) remoteSource.disconnect();
+  remoteSource = audioCtx.createMediaStreamSource(stream);
+  remoteSource.connect(panner);
 
   log('spatial audio graph ready', 'ok');
 }
