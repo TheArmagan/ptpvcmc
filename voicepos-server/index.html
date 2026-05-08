@@ -284,8 +284,8 @@
         </div>
         <div class="vol-slider-row">
           <label>max range (blocks)</label>
-          <input type="range" id="range-slider" min="8" max="128" value="64" oninput="updateRange(this.value)">
-          <span id="range-val" style="color:var(--muted);font-size:11px;width:30px">64</span>
+          <input type="range" id="range-slider" min="8" max="96" value="96" oninput="updateRange(this.value)">
+          <span id="range-val" style="color:var(--muted);font-size:11px;width:30px">96</span>
         </div>
       </div>
     </div>
@@ -496,7 +496,11 @@ function updateSpatialAudio(data) {
 
 // ─── webrtc ───────────────────────────────────────────────────────────────
 function makePeerConnection() {
-  pc = new RTCPeerConnection({ iceServers: [] }); // no stun needed for LAN, add if needed
+  pc = new RTCPeerConnection({ iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ] });
 
   pc.onicecandidate = (e) => {
     // null = all candidates gathered, update textarea with final SDP
