@@ -201,6 +201,71 @@
     margin-top: 6px;
   }
 
+  select {
+    font-family: inherit;
+    font-size: 11px;
+    background: #080808;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 7px 10px;
+    width: 100%;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23555'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  select:focus { outline: none; border-color: var(--border-bright); }
+  select option { background: #111; }
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .step:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .step-label {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+  }
+  .copy-btn textarea {
+    flex: 1;
+    min-height: 52px;
+    font-size: 10px;
+    resize: none;
+  }
+  .copy-btn button {
+    width: auto;
+    padding: 6px 10px;
+    font-size: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .copied-flash {
+    position: absolute;
+    right: 0;
+    top: -20px;
+    font-size: 10px;
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .copied-flash.show { opacity: 1; }
+
   .vol-slider-row {
     display: flex;
     align-items: center;
@@ -246,37 +311,56 @@
 
     <div>
       <div class="section-label">connection</div>
-      <div class="card" style="display:flex;flex-direction:column;gap:10px;">
-        <button class="primary" id="btn-create" onclick="createOffer()">create offer (you go first)</button>
-        <div id="offer-out-wrap" style="display:none">
-          <div class="copy-hint">send this to your friend ↓</div>
-          <textarea id="offer-out" readonly></textarea>
-          <button onclick="copyText('offer-out')" style="margin-top:6px">copy offer</button>
+      <div class="card" style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- INITIATOR FLOW -->
+        <div class="step">
+          <div class="step-label">step 1 — you start</div>
+          <button class="primary" id="btn-create" onclick="createOffer()">create offer</button>
+          <div id="offer-out-wrap" style="display:none;flex-direction:column;gap:6px;">
+            <div class="copy-hint">copy and send to your friend</div>
+            <div class="copy-btn" style="position:relative">
+              <textarea id="offer-out" readonly></textarea>
+              <button onclick="copyAndFlash('offer-out', this)">copy</button>
+              <span class="copied-flash">copied!</span>
+            </div>
+          </div>
         </div>
 
-        <div style="margin-top:4px">
-          <div class="copy-hint" style="margin-bottom:6px">paste offer from friend ↓</div>
-          <textarea id="offer-in" placeholder="paste offer here..."></textarea>
-          <button onclick="acceptOffer()" style="margin-top:6px" id="btn-accept">accept offer + create answer</button>
+        <!-- JOINER FLOW -->
+        <div class="step">
+          <div class="step-label">step 2 — paste friend's offer (if joining)</div>
+          <textarea id="offer-in" placeholder="paste offer here..." style="min-height:52px;font-size:10px"></textarea>
+          <button onclick="acceptOffer()" id="btn-accept">accept offer + create answer</button>
+          <div id="answer-out-wrap" style="display:none;flex-direction:column;gap:6px;">
+            <div class="copy-hint">copy and send back to your friend</div>
+            <div class="copy-btn" style="position:relative">
+              <textarea id="answer-out" readonly></textarea>
+              <button onclick="copyAndFlash('answer-out', this)">copy</button>
+              <span class="copied-flash">copied!</span>
+            </div>
+          </div>
         </div>
 
-        <div id="answer-out-wrap" style="display:none">
-          <div class="copy-hint">send this back to your friend ↓</div>
-          <textarea id="answer-out" readonly></textarea>
-          <button onclick="copyText('answer-out')" style="margin-top:6px">copy answer</button>
-        </div>
-
-        <div>
-          <div class="copy-hint" style="margin-bottom:6px">paste answer from friend ↓</div>
-          <textarea id="answer-in" placeholder="paste answer here..."></textarea>
+        <!-- INITIATOR APPLIES ANSWER -->
+        <div class="step">
+          <div class="step-label">step 3 — paste friend's answer (if you started)</div>
+          <textarea id="answer-in" placeholder="paste answer here..." style="min-height:52px;font-size:10px"></textarea>
           <button onclick="applyAnswer()" id="btn-answer">apply answer</button>
         </div>
+
       </div>
     </div>
 
     <div>
       <div class="section-label">audio</div>
       <div class="card" style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <div class="step-label" style="margin-bottom:6px">microphone</div>
+          <select id="mic-select" onchange="onMicDeviceChange()">
+            <option value="">default microphone</option>
+          </select>
+        </div>
         <button id="btn-mic" onclick="toggleMic()">🎙 start microphone</button>
         <div class="vol-slider-row">
           <label>master vol</label>
@@ -533,7 +617,7 @@ async function createOffer() {
   await waitForICE();
 
   document.getElementById('offer-out').value = JSON.stringify(pc.localDescription);
-  document.getElementById('offer-out-wrap').style.display = 'block';
+  document.getElementById('offer-out-wrap').style.display = 'flex';
   log('offer created — send it to your friend', 'ok');
 }
 
@@ -553,7 +637,7 @@ async function acceptOffer() {
   await waitForICE();
 
   document.getElementById('answer-out').value = JSON.stringify(pc.localDescription);
-  document.getElementById('answer-out-wrap').style.display = 'block';
+  document.getElementById('answer-out-wrap').style.display = 'flex';
   log('answer created — send it back', 'ok');
 }
 
@@ -577,10 +661,16 @@ function waitForICE() {
 }
 
 // ─── mic ──────────────────────────────────────────────────────────────────
+function micConstraints() {
+  const deviceId = document.getElementById('mic-select').value;
+  return { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
+}
+
 async function ensureMic() {
   if (localStream) return;
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  localStream = await navigator.mediaDevices.getUserMedia(micConstraints());
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  micActive = true;
   log('mic captured', 'ok');
   document.getElementById('btn-mic').textContent = '🔴 mic active';
 }
@@ -594,7 +684,7 @@ async function toggleMic() {
     log('mic stopped');
   } else {
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia(micConstraints());
       micActive = true;
       document.getElementById('btn-mic').textContent = '🔴 mic active';
       if (pc) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
@@ -641,6 +731,51 @@ function copyText(id) {
   const el = document.getElementById(id);
   navigator.clipboard.writeText(el.value).then(() => log('copied to clipboard', 'ok'));
 }
+
+function copyAndFlash(id, btn) {
+  const el = document.getElementById(id);
+  navigator.clipboard.writeText(el.value).then(() => {
+    log('copied to clipboard', 'ok');
+    const flash = btn.nextElementSibling;
+    flash.classList.add('show');
+    setTimeout(() => flash.classList.remove('show'), 1500);
+  });
+}
+
+// ─── microphone device enumeration ────────────────────────────────────────
+async function populateMicList() {
+  try {
+    // need a temporary permission grant to get device labels
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch(e) { /* permission denied — labels will be empty */ }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const sel = document.getElementById('mic-select');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">default microphone</option>';
+  devices.filter(d => d.kind === 'audioinput').forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0,8)}...)`;
+    sel.appendChild(opt);
+  });
+  // restore selection if still present
+  if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+function onMicDeviceChange() {
+  if (micActive) {
+    // restart mic with new device
+    localStream?.getTracks().forEach(t => t.stop());
+    localStream = null;
+    micActive = false;
+    toggleMic();
+  }
+}
+
+navigator.mediaDevices.addEventListener('devicechange', populateMicList);
+populateMicList();
 </script>
 </body>
 </html>
