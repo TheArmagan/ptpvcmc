@@ -599,7 +599,8 @@ function makePeerConnection() {
 
   pc.ontrack = (e) => {
     log('got remote audio track', 'ok');
-    setupAudioGraph(e.streams[0]);
+    const stream = e.streams[0] ?? new MediaStream([e.track]);
+    setupAudioGraph(stream);
   };
 
   pc.onconnectionstatechange = () => {
@@ -724,11 +725,14 @@ function initAudio() {
 }
 
 function setupAudioGraph(stream) {
-  // initAudio() must have been called first from a user gesture
   audioCtx.resume();
 
-  // Wire sink — muted autoplay is allowed in Chrome without a gesture
+  // Chrome requires the sink element to be explicitly played; autoplay alone
+  // won't re-trigger if the stream had no data when srcObject was first set
+  // (which happens on the joiner side, where ontrack fires before ICE is up).
+  // Muted play() is always permitted regardless of user-gesture context.
   sinkEl.srcObject = stream;
+  sinkEl.play().catch(() => {});
 
   if (remoteSource) remoteSource.disconnect();
   remoteSource = audioCtx.createMediaStreamSource(stream);
