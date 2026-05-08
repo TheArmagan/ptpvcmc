@@ -1,0 +1,13 @@
+{
+  "name": "voicepos-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bun run server.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2"
+  }
+}

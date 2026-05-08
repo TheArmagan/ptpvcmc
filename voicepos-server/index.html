@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>voicepos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --border: #1f1f1f;
+    --border-bright: #2e2e2e;
+    --text: #e0e0e0;
+    --muted: #555;
+    --accent: #00ff88;
+    --accent-dim: rgba(0,255,136,0.08);
+    --red: #ff4455;
+    --yellow: #ffcc00;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .status-dot.connected { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .status-dot.error { background: var(--red); }
+
+  #status-text { color: var(--muted); font-size: 11px; margin-left: 2px; }
+
+  main {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .panel {
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .panel-right {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border-bright);
+    background: var(--surface);
+    color: var(--text);
+    padding: 8px 14px;
+    transition: all 0.15s;
+    width: 100%;
+    text-align: left;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  textarea {
+    font-family: inherit;
+    font-size: 11px;
+    background: #080808;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 10px;
+    width: 100%;
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.4;
+  }
+  textarea:focus { outline: none; border-color: var(--border-bright); }
+  textarea::placeholder { color: var(--muted); }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row button { width: auto; flex: 1; }
+
+  /* radar / map */
+  #radar {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #080808;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #radar canvas { width: 100%; height: 100%; }
+
+  /* player list */
+  #player-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .player-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: #0d0d0d;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: border-color 0.2s;
+  }
+  .player-entry.speaking { border-color: var(--accent); }
+
+  .player-name { flex: 1; color: var(--text); }
+  .player-dist { color: var(--muted); font-size: 11px; }
+  .player-vol {
+    width: 60px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .player-vol-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.1s;
+  }
+
+  /* self info */
+  .coord-row { display: flex; gap: 6px; }
+  .coord {
+    flex: 1;
+    background: #080808;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .coord span { color: var(--muted); display: block; font-size: 9px; letter-spacing: 0.1em; }
+
+  .copy-hint {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .vol-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .vol-slider-row label { color: var(--muted); font-size: 11px; width: 90px; }
+  input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  #log {
+    font-size: 10px;
+    color: var(--muted);
+    max-height: 80px;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+  #log .entry { display: block; }
+  #log .entry.ok { color: #448844; }
+  #log .entry.err { color: var(--red); }
+  #log .entry.info { color: #4488aa; }
+
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot" id="dot"></div>
+  <div class="logo">voicepos</div>
+  <div id="status-text">waiting for mod data...</div>
+</header>
+
+<main>
+  <!-- LEFT PANEL: webrtc controls -->
+  <div class="panel">
+
+    <div>
+      <div class="section-label">connection</div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;">
+        <button class="primary" id="btn-create" onclick="createOffer()">create offer (you go first)</button>
+        <div id="offer-out-wrap" style="display:none">
+          <div class="copy-hint">send this to your friend ↓</div>
+          <textarea id="offer-out" readonly></textarea>
+          <button onclick="copyText('offer-out')" style="margin-top:6px">copy offer</button>
+        </div>
+
+        <div style="margin-top:4px">
+          <div class="copy-hint" style="margin-bottom:6px">paste offer from friend ↓</div>
+          <textarea id="offer-in" placeholder="paste offer here..."></textarea>
+          <button onclick="acceptOffer()" style="margin-top:6px" id="btn-accept">accept offer + create answer</button>
+        </div>
+
+        <div id="answer-out-wrap" style="display:none">
+          <div class="copy-hint">send this back to your friend ↓</div>
+          <textarea id="answer-out" readonly></textarea>
+          <button onclick="copyText('answer-out')" style="margin-top:6px">copy answer</button>
+        </div>
+
+        <div>
+          <div class="copy-hint" style="margin-bottom:6px">paste answer from friend ↓</div>
+          <textarea id="answer-in" placeholder="paste answer here..."></textarea>
+          <button onclick="applyAnswer()" id="btn-answer">apply answer</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">audio</div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;">
+        <button id="btn-mic" onclick="toggleMic()">🎙 start microphone</button>
+        <div class="vol-slider-row">
+          <label>master vol</label>
+          <input type="range" id="master-vol" min="0" max="200" value="100" oninput="setMasterVol(this.value)">
+        </div>
+        <div class="vol-slider-row">
+          <label>max range (blocks)</label>
+          <input type="range" id="range-slider" min="8" max="128" value="64" oninput="updateRange(this.value)">
+          <span id="range-val" style="color:var(--muted);font-size:11px;width:30px">64</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">log</div>
+      <div id="log"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT PANEL: radar + player list -->
+  <div class="panel-right">
+
+    <div>
+      <div class="section-label">your position</div>
+      <div class="coord-row">
+        <div class="coord" id="coord-x"><span>X</span>—</div>
+        <div class="coord" id="coord-y"><span>Y</span>—</div>
+        <div class="coord" id="coord-z"><span>Z</span>—</div>
+        <div class="coord" id="coord-yaw"><span>YAW</span>—</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">radar</div>
+      <div id="radar"><canvas id="radar-canvas"></canvas></div>
+    </div>
+
+    <div>
+      <div class="section-label">nearby players</div>
+      <div id="player-list"><div style="color:var(--muted)">no players nearby</div></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ─── state ─────────────────────────────────────────────────────────────
+let pc = null;
+let localStream = null;
+let audioCtx = null;
+let masterGain = null;
+let remoteSource = null;
+let panner = null;
+let micActive = false;
+let lastPositions = { self: null, nearby: [] };
+let maxRange = 96;
+
+// ─── logging ────────────────────────────────────────────────────────────
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const line = document.createElement('span');
+  line.className = `entry ${type}`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(line);
+}
+
+// ─── position polling ───────────────────────────────────────────────────
+async function pollPositions() {
+  try {
+    const res = await fetch('/positions');
+    const data = await res.json();
+    lastPositions = data;
+
+    const dot = document.getElementById('dot');
+    const statusText = document.getElementById('status-text');
+
+    if (data.self) {
+      dot.className = 'status-dot connected';
+      statusText.textContent = `receiving — ${data.self.name}`;
+      document.getElementById('coord-x').innerHTML = `<span>X</span>${data.self.x.toFixed(1)}`;
+      document.getElementById('coord-y').innerHTML = `<span>Y</span>${data.self.y.toFixed(1)}`;
+      document.getElementById('coord-z').innerHTML = `<span>Z</span>${data.self.z.toFixed(1)}`;
+      document.getElementById('coord-yaw').innerHTML = `<span>YAW</span>${data.self.yaw.toFixed(0)}°`;
+    } else {
+      dot.className = 'status-dot';
+      statusText.textContent = 'waiting for mod data...';
+    }
+
+    updateRadar(data);
+    updatePlayerList(data);
+    updateSpatialAudio(data);
+  } catch(e) {
+    document.getElementById('dot').className = 'status-dot error';
+    document.getElementById('status-text').textContent = 'server unreachable';
+  }
+}
+setInterval(pollPositions, 50);
+
+// ─── radar ──────────────────────────────────────────────────────────────
+function updateRadar(data) {
+  const canvas = document.getElementById('radar-canvas');
+  const size = canvas.parentElement.clientWidth;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2, cy = size / 2;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // grid rings
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 1;
+  for (let r = 1; r <= 3; r++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, (cx * r) / 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // crosshair
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, size); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(size, cy); ctx.stroke();
+
+  if (!data.self) return;
+
+  const scale = (cx * 0.9) / maxRange;
+  const yaw = (data.self.yaw * Math.PI) / 180;
+
+  // nearby players
+  (data.nearby || []).forEach(p => {
+    const dx = p.x - data.self.x;
+    const dz = p.z - data.self.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > maxRange) return;
+
+    // rotate by player yaw
+    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+
+    const px = cx + rx * scale;
+    const py = cy + rz * scale;
+
+    const alpha = Math.max(0.2, 1 - dist / maxRange);
+    ctx.fillStyle = `rgba(0,255,136,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(180,180,180,${alpha})`;
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillText(p.name, px + 6, py + 4);
+  });
+
+  // self dot (center, always)
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // direction indicator
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - 14);
+  ctx.stroke();
+}
+
+// ─── player list ─────────────────────────────────────────────────────────
+function updatePlayerList(data) {
+  const el = document.getElementById('player-list');
+  if (!data.self || !data.nearby?.length) {
+    el.innerHTML = '<div style="color:var(--muted)">no players nearby</div>';
+    return;
+  }
+  el.innerHTML = data.nearby.map(p => {
+    const dx = p.x - data.self.x;
+    const dy = p.y - data.self.y;
+    const dz = p.z - data.self.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz).toFixed(1);
+    const vol = Math.max(0, 1 - dist / maxRange);
+    return `
+      <div class="player-entry">
+        <div class="player-name">${p.name}</div>
+        <div class="player-dist">${dist}m</div>
+        <div class="player-vol"><div class="player-vol-fill" style="width:${vol*100}%"></div></div>
+      </div>`;
+  }).join('');
+}
+
+// ─── spatial audio ────────────────────────────────────────────────────────
+function updateSpatialAudio(data) {
+  if (!panner || !data.self || !data.nearby?.length) return;
+
+  // use first nearby player for now (extend later for multiple)
+  const p = data.nearby[0];
+  if (!p) return;
+
+  const dx = p.x - data.self.x;
+  const dy = p.y - data.self.y;
+  const dz = p.z - data.self.z;
+
+  // rotate relative position by player's yaw so audio is head-relative
+  const yaw = (data.self.yaw * Math.PI) / 180;
+  const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+  const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+
+  panner.positionX.setTargetAtTime(rx, audioCtx.currentTime, 0.05);
+  panner.positionY.setTargetAtTime(dy, audioCtx.currentTime, 0.05);
+  panner.positionZ.setTargetAtTime(rz, audioCtx.currentTime, 0.05);
+
+  // distance-based rolloff
+  panner.maxDistance = maxRange;
+  panner.refDistance = 4;
+  panner.rolloffFactor = 1.5;
+}
+
+// ─── webrtc ───────────────────────────────────────────────────────────────
+function makePeerConnection() {
+  pc = new RTCPeerConnection({ iceServers: [] }); // no stun needed for LAN, add if needed
+
+  pc.onicecandidate = (e) => {
+    // null = all candidates gathered, update textarea with final SDP
+    if (e.candidate === null) {
+      const offerOut = document.getElementById('offer-out');
+      const answerOut = document.getElementById('answer-out');
+      if (offerOut.value) offerOut.value = JSON.stringify(pc.localDescription);
+      if (answerOut.value) answerOut.value = JSON.stringify(pc.localDescription);
+    }
+  };
+
+  pc.ontrack = (e) => {
+    log('got remote audio track', 'ok');
+    setupAudioGraph(e.streams[0]);
+  };
+
+  pc.onconnectionstatechange = () => {
+    log(`peer state: ${pc.connectionState}`, pc.connectionState === 'connected' ? 'ok' : 'info');
+  };
+}
+
+async function createOffer() {
+  makePeerConnection();
+  await ensureMic();
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // wait for ICE gathering
+  await waitForICE();
+
+  document.getElementById('offer-out').value = JSON.stringify(pc.localDescription);
+  document.getElementById('offer-out-wrap').style.display = 'block';
+  log('offer created — send it to your friend', 'ok');
+}
+
+async function acceptOffer() {
+  const raw = document.getElementById('offer-in').value.trim();
+  if (!raw) return log('paste an offer first', 'err');
+
+  makePeerConnection();
+  await ensureMic();
+
+  const offer = JSON.parse(raw);
+  await pc.setRemoteDescription(offer);
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  await waitForICE();
+
+  document.getElementById('answer-out').value = JSON.stringify(pc.localDescription);
+  document.getElementById('answer-out-wrap').style.display = 'block';
+  log('answer created — send it back', 'ok');
+}
+
+async function applyAnswer() {
+  const raw = document.getElementById('answer-in').value.trim();
+  if (!raw) return log('paste the answer first', 'err');
+  if (!pc) return log('create an offer first', 'err');
+  await pc.setRemoteDescription(JSON.parse(raw));
+  log('answer applied — connecting...', 'ok');
+}
+
+function waitForICE() {
+  return new Promise(resolve => {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') resolve();
+    });
+    // fallback timeout
+    setTimeout(resolve, 3000);
+  });
+}
+
+// ─── mic ──────────────────────────────────────────────────────────────────
+async function ensureMic() {
+  if (localStream) return;
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  log('mic captured', 'ok');
+  document.getElementById('btn-mic').textContent = '🔴 mic active';
+}
+
+async function toggleMic() {
+  if (micActive) {
+    localStream?.getTracks().forEach(t => t.stop());
+    localStream = null;
+    micActive = false;
+    document.getElementById('btn-mic').textContent = '🎙 start microphone';
+    log('mic stopped');
+  } else {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      micActive = true;
+      document.getElementById('btn-mic').textContent = '🔴 mic active';
+      if (pc) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      log('mic started', 'ok');
+    } catch(e) {
+      log('mic error: ' + e.message, 'err');
+    }
+  }
+}
+
+// ─── audio graph ──────────────────────────────────────────────────────────
+function setupAudioGraph(stream) {
+  audioCtx = new AudioContext();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = document.getElementById('master-vol').value / 100;
+
+  panner = audioCtx.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.maxDistance = maxRange;
+  panner.refDistance = 4;
+  panner.rolloffFactor = 1.5;
+
+  remoteSource = audioCtx.createMediaStreamSource(stream);
+  remoteSource.connect(panner);
+  panner.connect(masterGain);
+  masterGain.connect(audioCtx.destination);
+
+  log('spatial audio graph ready', 'ok');
+}
+
+function setMasterVol(v) {
+  if (masterGain) masterGain.gain.value = v / 100;
+}
+
+function updateRange(v) {
+  maxRange = parseInt(v);
+  document.getElementById('range-val').textContent = v;
+  if (panner) panner.maxDistance = maxRange;
+}
+
+// ─── util ─────────────────────────────────────────────────────────────────
+function copyText(id) {
+  const el = document.getElementById(id);
+  navigator.clipboard.writeText(el.value).then(() => log('copied to clipboard', 'ok'));
+}
+</script>
+</body>
+</html>
