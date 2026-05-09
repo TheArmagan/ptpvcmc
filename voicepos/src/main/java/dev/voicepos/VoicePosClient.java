@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 
 public class VoicePosClient implements ClientModInitializer {
@@ -77,14 +78,14 @@ public class VoicePosClient implements ClientModInitializer {
             if (other == self) continue;
             if (other.distanceTo(self) > range) continue;
             Vec3 pos = other.position();
-            nearbyJson.add(String.format(
+            nearbyJson.add(String.format(Locale.ROOT,
                 "{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f}",
                 other.getName().getString(), pos.x, pos.y, pos.z
             ));
         }
 
         // build full json payload
-        String json = String.format(
+        String json = String.format(Locale.ROOT,
             "{\"self\":{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"yaw\":%.2f}," +
             "\"nearby\":[%s]}",
             self.getName().getString(),
