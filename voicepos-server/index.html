@@ -60,6 +60,8 @@
   .status-dot.error { background: var(--red); }
 
   #status-text { color: var(--muted); font-size: 11px; margin-left: 2px; }
+  #reset-name { color: var(--muted); font-size: 10px; cursor: pointer; background: none; border: none; padding: 0; width: auto; text-decoration: underline; }
+  #reset-name:hover { color: var(--text); }
 
   main {
     display: grid;
@@ -279,6 +281,22 @@
     cursor: pointer;
   }
 
+  .name-picker { display: flex; flex-direction: column; gap: 8px; }
+  .name-picker-list { display: flex; flex-direction: column; gap: 4px; }
+  .name-option {
+    padding: 8px 12px;
+    background: #0d0d0d;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text);
+    text-align: left;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .name-option:hover { border-color: var(--accent); color: var(--accent); }
+  .name-hint { font-size: 10px; color: var(--muted); }
+
   #log {
     font-size: 10px;
     color: var(--muted);
@@ -341,11 +359,20 @@
   <div class="status-dot" id="dot"></div>
   <div class="logo">voicepos</div>
   <div id="status-text">waiting for mod data...</div>
+  <button id="reset-name" onclick="resetName()" title="change name" style="display:none">not you?</button>
 </header>
 
 <main>
   <!-- LEFT PANEL: webrtc controls -->
   <div class="panel">
+
+    <div id="name-picker-section">
+      <div class="section-label">who are you?</div>
+      <div class="card name-picker">
+        <div class="name-hint">waiting for mod data — start Minecraft first</div>
+        <div class="name-picker-list" id="name-picker-list"></div>
+      </div>
+    </div>
 
     <div>
       <div class="section-label">audio</div>
@@ -365,6 +392,13 @@
           <label>max range (blocks)</label>
           <input type="range" id="range-slider" min="8" max="96" value="96" oninput="updateRange(this.value)">
           <span id="range-val" style="color:var(--muted);font-size:11px;width:30px">96</span>
+        </div>
+        <div class="toggle-row">
+          <span>noise suppression</span>
+          <label class="toggle">
+            <input type="checkbox" id="noise-suppression" checked onchange="applyNoiseSuppression()">
+            <div class="toggle-track"></div>
+          </label>
         </div>
       </div>
     </div>
@@ -404,7 +438,7 @@
 
 <script>
 // ─── state ─────────────────────────────────────────────────────────────
-let myName = null;
+let myName = localStorage.getItem('voicepos-name') ?? null;
 let localStream = null;
 let micActive = false;
 let audioCtx = null;
@@ -424,6 +458,50 @@ function log(msg, type = 'info') {
   el.prepend(line);
 }
 
+// ─── name picker ────────────────────────────────────────────────────────
+function selectName(name) {
+  myName = name;
+  localStorage.setItem('voicepos-name', name);
+  document.getElementById('name-picker-section').style.display = 'none';
+  document.getElementById('reset-name').style.display = '';
+  log(`you are ${name}`, 'ok');
+}
+
+function resetName() {
+  myName = null;
+  localStorage.removeItem('voicepos-name');
+  document.getElementById('name-picker-section').style.display = '';
+  document.getElementById('reset-name').style.display = 'none';
+  for (const [name] of [...peers]) cleanupPeer(name);
+}
+
+async function pollNamePicker() {
+  if (myName) return;
+  try {
+    const res = await fetch('/players');
+    const names = await res.json();
+    const list = document.getElementById('name-picker-list');
+    const hint = list.previousElementSibling;
+    if (!names.length) {
+      hint.textContent = 'waiting for mod data — start Minecraft first';
+      list.innerHTML = '';
+      return;
+    }
+    hint.textContent = 'select your Minecraft username:';
+    list.innerHTML = names.map(n =>
+      `<button class="name-option" onclick="selectName(${JSON.stringify(n)})">${n}</button>`
+    ).join('');
+  } catch(e) {}
+}
+setInterval(pollNamePicker, 1000);
+pollNamePicker();
+
+// restore state if name already known from localStorage
+if (myName) {
+  document.getElementById('name-picker-section').style.display = 'none';
+  document.getElementById('reset-name').style.display = '';
+}
+
 // ─── position polling ───────────────────────────────────────────────────
 async function pollPositions() {
   try {
@@ -436,16 +514,18 @@ async function pollPositions() {
     const statusText = document.getElementById('status-text');
 
     if (data.self) {
-      myName = data.self.name;
       dot.className = 'status-dot connected';
-      statusText.textContent = `${data.self.name}`;
+      statusText.textContent = myName;
       document.getElementById('coord-x').innerHTML = `<span>X</span>${data.self.x.toFixed(1)}`;
       document.getElementById('coord-y').innerHTML = `<span>Y</span>${data.self.y.toFixed(1)}`;
       document.getElementById('coord-z').innerHTML = `<span>Z</span>${data.self.z.toFixed(1)}`;
       document.getElementById('coord-yaw').innerHTML = `<span>YAW</span>${data.self.yaw.toFixed(0)}°`;
+    } else if (myName) {
+      dot.className = 'status-dot';
+      statusText.textContent = 'mod not sending data...';
     } else {
       dot.className = 'status-dot';
-      statusText.textContent = 'waiting for mod data...';
+      statusText.textContent = 'pick your name →';
     }
 
     updateRadar(data);
@@ -733,7 +813,19 @@ function waitForICE(pc) {
 // ─── mic ──────────────────────────────────────────────────────────────────
 function micConstraints() {
   const deviceId = document.getElementById('mic-select').value;
-  return { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
+  const noiseSuppression = document.getElementById('noise-suppression').checked;
+  const audio = { noiseSuppression };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return { audio, video: false };
+}
+
+async function applyNoiseSuppression() {
+  const enabled = document.getElementById('noise-suppression').checked;
+  if (localStream) {
+    const track = localStream.getAudioTracks()[0];
+    if (track) await track.applyConstraints({ noiseSuppression: enabled }).catch(() => {});
+  }
+  log(`noise suppression ${enabled ? 'on' : 'off'}`);
 }
 
 async function toggleMic() {

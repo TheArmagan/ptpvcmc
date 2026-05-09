@@ -23,6 +23,7 @@ function evict() {
       players.delete(name);
     }
   }
+
 }
 
 app.post("/positions", async (c) => {
@@ -66,17 +67,28 @@ app.get("/signal/:id", (c) => {
   return c.json(queue);
 });
 
+app.get("/players", (c) => {
+  evict();
+  return c.json([...players.keys()]);
+});
+
 app.get("/", (c) => {
   return c.html(readFileSync("./index.html", "utf-8"));
 });
 
 console.log("voicepos server running on http://localhost:7270");
 
+function normalizeIP(ip: string): string {
+  if (ip === "::1") return "127.0.0.1";
+  if (ip.startsWith("::ffff:")) return ip.slice(7);
+  return ip;
+}
+
 // Wrap fetch to inject real client IP before Hono sees the request
 export default {
   port: 7270,
   async fetch(req: Request, server: any) {
-    const ip: string = server.requestIP?.(req)?.address ?? "unknown";
+    const ip: string = normalizeIP(server.requestIP?.(req)?.address ?? "unknown");
     const headers = new Headers(req.headers);
     headers.set("x-client-ip", ip);
     return app.fetch(new Request(req, { headers }));
