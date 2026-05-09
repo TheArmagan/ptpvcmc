@@ -572,8 +572,8 @@ function updateRadar(data) {
 
   // nearby players
   (data.nearby || []).forEach(p => {
-    const dx = p.x - data.self.x;
-    const dz = p.z - data.self.z;
+    const dx = (p.x - data.self.x) * -1;
+    const dz = (p.z - data.self.z) * -1;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist > maxRange) return;
 
