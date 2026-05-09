@@ -489,7 +489,7 @@ async function pollNamePicker() {
     }
     hint.textContent = 'select your Minecraft username:';
     list.innerHTML = names.map(n =>
-      `<button class="name-option" onclick="selectName(${JSON.stringify(n)})">${n}</button>`
+      `<button class="name-option" onclick="selectName(atob('${btoa(n)}'))">${n}</button>`
     ).join('');
   } catch(e) {}
 }
