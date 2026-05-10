@@ -77,7 +77,7 @@ public class VoicePosClient implements ClientModInitializer {
 
         Player self = client.player;
         Vec3 selfPos = self.position();
-        String worldName = client.level.dimension().location().toString();
+        String worldName = client.level.dimension().identifier().toString();
 
         // refresh jukebox scan once per second
         jukeboxScanCounter++;

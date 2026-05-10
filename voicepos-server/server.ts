@@ -269,7 +269,13 @@ export default {
       }
       const filepath = `${JUKEBOX_AUDIO_DIR}/${filename}`;
       if (!existsSync(filepath)) return new Response("Not found", { status: 404 });
-      return new Response(Bun.file(filepath));
+      return new Response(Bun.file(filepath), {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+        },
+      });
     }
 
     const ip = normalizeIP(server.requestIP?.(req)?.address ?? "unknown");
