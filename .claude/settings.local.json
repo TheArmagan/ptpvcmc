@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\style.css\" \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\static\\\\\" && mv \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\main.js\" \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\static\\\\\")",
+      "Bash(mv \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\radar.js\" \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\static\\\\\" && mv \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\audio.js\" \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\static\\\\\")",
+      "PowerShell(Move-Item \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\index.html\" \"c:\\\\Users\\\\armagan\\\\Documents\\\\GitHub\\\\ptpvcmc\\\\voicepos-server\\\\static\\\\index.html\")"
+    ]
+  }
+}

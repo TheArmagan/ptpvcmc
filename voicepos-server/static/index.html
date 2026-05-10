@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>voicepos</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="status-dot" id="dot"></div>
+  <div class="logo">voicepos</div>
+  <div id="status-text">waiting for mod data...</div>
+  <button id="reset-name" style="display:none">not you?</button>
+</header>
+
+<main>
+  <!-- LEFT PANEL: audio controls -->
+  <div class="panel">
+
+    <div id="name-picker-section">
+      <div class="section-label">who are you?</div>
+      <div class="card name-picker">
+        <div class="name-hint">waiting for mod data — start Minecraft first</div>
+        <div class="name-picker-list" id="name-picker-list"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">audio</div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <div class="step-label" style="margin-bottom:6px">microphone</div>
+          <select id="mic-select">
+            <option value="">default microphone</option>
+          </select>
+        </div>
+        <button id="btn-mic">🎙 join voice</button>
+        <div class="vol-slider-row">
+          <label>master vol</label>
+          <input type="range" id="master-vol" min="0" max="200" value="100">
+        </div>
+        <div class="vol-slider-row">
+          <label>jukebox vol</label>
+          <input type="range" id="jukebox-vol" min="0" max="200" value="80">
+        </div>
+        <div class="vol-slider-row">
+          <label>max range (blocks)</label>
+          <input type="range" id="range-slider" min="8" max="96" value="96">
+          <span id="range-val" style="color:var(--muted);font-size:11px;width:30px">96</span>
+        </div>
+        <div class="toggle-row">
+          <span>noise suppression</span>
+          <label class="toggle">
+            <input type="checkbox" id="noise-suppression" checked>
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">log</div>
+      <div id="log"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT PANEL: radar + player list -->
+  <div class="panel-right">
+
+    <div>
+      <div class="section-label">your position</div>
+      <div class="coord-row">
+        <div class="coord" id="coord-x"><span>X</span>—</div>
+        <div class="coord" id="coord-y"><span>Y</span>—</div>
+        <div class="coord" id="coord-z"><span>Z</span>—</div>
+        <div class="coord" id="coord-yaw"><span>YAW</span>—</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">radar</div>
+      <div id="radar"><canvas id="radar-canvas"></canvas></div>
+    </div>
+
+    <div>
+      <div class="section-label">nearby players</div>
+      <div id="player-list"><div style="color:var(--muted)">no players nearby</div></div>
+    </div>
+
+    <div id="jukebox-section" style="display:none">
+      <div class="section-label">jukebox</div>
+      <div class="card jukebox-card">
+        <div class="jukebox-header">
+          <span class="jukebox-icon">♪</span>
+          <span id="jukebox-coords" style="color:var(--muted);font-size:11px"></span>
+          <span id="jukebox-status" style="font-size:11px;margin-left:auto"></span>
+        </div>
+        <input type="file" id="jukebox-file" accept=".mp3,audio/mpeg,audio/*" style="display:none">
+        <button id="jukebox-upload-btn">📂 upload audio (.mp3)</button>
+        <button id="jukebox-remove-btn" style="display:none">🗑 remove audio</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script type="module" src="/static/main.js"></script>
+</body>
+</html>

@@ -4,7 +4,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
@@ -24,12 +26,16 @@ import java.util.Properties;
 public class VoicePosClient implements ClientModInitializer {
 
     private static final int SEND_INTERVAL_TICKS = 1;
+    private static final int JUKEBOX_SCAN_RADIUS = 32;
+    private static final int JUKEBOX_SCAN_INTERVAL_TICKS = 20 * 5;
 
     private String endpoint = "http://localhost:7270/positions";
     private double range = 96.0;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private int tickCounter = 0;
+    private int jukeboxScanCounter = JUKEBOX_SCAN_INTERVAL_TICKS; // scan immediately on first tick
+    private List<String> cachedJukeboxJson = new ArrayList<>();
 
     @Override
     public void onInitializeClient() {
@@ -71,27 +77,37 @@ public class VoicePosClient implements ClientModInitializer {
 
         Player self = client.player;
         Vec3 selfPos = self.position();
+        String worldName = client.level.dimension().location().toString();
 
-        // build nearby players list
+        // refresh jukebox scan once per second
+        jukeboxScanCounter++;
+        if (jukeboxScanCounter >= JUKEBOX_SCAN_INTERVAL_TICKS) {
+            jukeboxScanCounter = 0;
+            cachedJukeboxJson = scanNearbyJukeboxes(client, self, worldName);
+        }
+
+        // build nearby players list (all in same dimension as self)
         List<String> nearbyJson = new ArrayList<>();
         for (Player other : client.level.players()) {
             if (other == self) continue;
             if (other.distanceTo(self) > range) continue;
             Vec3 pos = other.position();
             nearbyJson.add(String.format(Locale.ROOT,
-                "{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f}",
-                other.getName().getString(), pos.x, pos.y, pos.z
+                "{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"world\":\"%s\"}",
+                other.getName().getString(), pos.x, pos.y, pos.z, worldName
             ));
         }
 
         // build full json payload
         String json = String.format(Locale.ROOT,
-            "{\"self\":{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"yaw\":%.2f}," +
-            "\"nearby\":[%s]}",
+            "{\"self\":{\"name\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"yaw\":%.2f,\"world\":\"%s\"}," +
+            "\"nearby\":[%s],\"jukeboxes\":[%s]}",
             self.getName().getString(),
             selfPos.x, selfPos.y, selfPos.z,
             self.getYRot(),
-            String.join(",", nearbyJson)
+            worldName,
+            String.join(",", nearbyJson),
+            String.join(",", cachedJukeboxJson)
         );
 
         // fire and forget — don't block the game thread
@@ -103,5 +119,26 @@ public class VoicePosClient implements ClientModInitializer {
 
         http.sendAsync(request, HttpResponse.BodyHandlers.discarding())
             .exceptionally(e -> null); // silently ignore if server not running
+    }
+
+    private List<String> scanNearbyJukeboxes(Minecraft client, Player self, String worldName) {
+        List<String> result = new ArrayList<>();
+        BlockPos center = self.blockPosition();
+        int r = JUKEBOX_SCAN_RADIUS;
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    BlockPos pos = center.offset(dx, dy, dz);
+                    if (!client.level.isLoaded(pos)) continue;
+                    if (client.level.getBlockState(pos).is(Blocks.JUKEBOX)) {
+                        result.add(String.format(Locale.ROOT,
+                            "{\"x\":%d,\"y\":%d,\"z\":%d,\"world\":\"%s\"}",
+                            pos.getX(), pos.getY(), pos.getZ(), worldName
+                        ));
+                    }
+                }
+            }
+        }
+        return result;
     }
 }
