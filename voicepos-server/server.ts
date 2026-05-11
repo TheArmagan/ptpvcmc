@@ -59,7 +59,7 @@ function saveJukeboxState() {
       .filter(([, jb]) => jb.file)
       .map(([id, jb]) => ({ id, x: jb.x, y: jb.y, z: jb.z, world: jb.world, file: jb.file, startedAt: jb.startedAt }));
     writeFileSync(JUKEBOX_STATE_FILE, JSON.stringify(state));
-  } catch {}
+  } catch { }
 }
 
 function loadJukeboxState() {
@@ -77,7 +77,7 @@ function loadJukeboxState() {
         lastSeen: 0, // unknown — becomes active once mod re-reports it
       });
     }
-  } catch {}
+  } catch { }
 }
 
 // ─── eviction ─────────────────────────────────────────────────────────────
@@ -100,7 +100,6 @@ function evict() {
 const wsClients = new Map<any, { name: string | null }>();
 
 function sendPositionsToClient(ws: any, name: string | null) {
-  ws.send(JSON.stringify({ type: "players", data: [...players.keys()] }));
   if (name) {
     const myData = players.get(name);
     if (myData) {
@@ -131,7 +130,12 @@ function _broadcastToAll() {
 const broadcastToAll = throttle(_broadcastToAll, 50);
 
 setInterval(() => {
-  if (wsClients.size > 0) broadcastToAll();
+  if (wsClients.size > 0) {
+    broadcastToAll();
+    for (const [ws, client] of wsClients) {
+      ws.send(JSON.stringify({ type: "players", data: [...players.keys()] }));
+    }
+  }
 }, 2000);
 
 // ─── positions (mod → server) ─────────────────────────────────────────────
@@ -185,10 +189,10 @@ app.post("/jukebox/:id/upload", async (c) => {
 
   // Remove old file if present
   if (jb.file) {
-    try { unlinkSync(`${JUKEBOX_AUDIO_DIR}/${jb.file}`); } catch {}
+    try { unlinkSync(`${JUKEBOX_AUDIO_DIR}/${jb.file}`); } catch { }
   }
 
-  const filename = `${sanitizeFilename(id)}.mp3`;
+  const filename = `${sanitizeFilename(id)}-${Date.now()}.mp3`;
   writeFileSync(`${JUKEBOX_AUDIO_DIR}/${filename}`, Buffer.from(await file.arrayBuffer()));
 
   jb.file = filename;
@@ -207,7 +211,7 @@ app.delete("/jukebox/:id/audio", (c) => {
   if (!jb) return c.json({ error: "not found" }, 404);
 
   if (jb.file) {
-    try { unlinkSync(`${JUKEBOX_AUDIO_DIR}/${jb.file}`); } catch {}
+    try { unlinkSync(`${JUKEBOX_AUDIO_DIR}/${jb.file}`); } catch { }
     jb.file = null;
     jb.startedAt = 0;
   }
@@ -311,7 +315,7 @@ export default {
             }
           }
         }
-      } catch {}
+      } catch { }
     },
 
     close(ws: any) {

@@ -27,8 +27,8 @@ export function updateJukeboxAudio(jukeboxes) {
   for (const [id, node] of nodes) {
     if (!playingIds.has(id)) {
       node.audioEl.pause();
-      try { node.source?.disconnect(); } catch {}
-      try { node.panner?.disconnect(); } catch {}
+      try { node.source?.disconnect(); } catch { }
+      try { node.panner?.disconnect(); } catch { }
       nodes.delete(id);
     }
   }
@@ -40,16 +40,16 @@ export function updateJukeboxAudio(jukeboxes) {
     if (!gain) continue;
 
     const ctx = getAudioCtx();
-    const src = `/jukebox-audio/${encodeURIComponent(jb.file)}`;
+    const src = `/jukebox-audio/${encodeURIComponent(jb.file)}?t=${jb.startedAt}`;
     let node = nodes.get(jb.id);
 
-    if (node && node.file === jb.file) continue; // already playing correct file
+    if (node && node.file === jb.file && node.startedAt === jb.startedAt) continue; // already playing correct file
 
     // Tear down previous node for this id (file changed)
     if (node) {
       node.audioEl.pause();
-      try { node.source?.disconnect(); } catch {}
-      try { node.panner?.disconnect(); } catch {}
+      try { node.source?.disconnect(); } catch { }
+      try { node.panner?.disconnect(); } catch { }
     }
 
     const panner = createPanner(256, gain);
@@ -69,7 +69,7 @@ export function updateJukeboxAudio(jukeboxes) {
       if (audioEl.duration) {
         audioEl.currentTime = ((Date.now() - jb.startedAt) / 1000) % audioEl.duration;
       }
-      audioEl.play().catch(() => {});
+      audioEl.play().catch(() => { });
     }, { once: true });
   }
 }
